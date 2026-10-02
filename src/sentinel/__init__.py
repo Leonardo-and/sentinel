@@ -9,19 +9,35 @@
         bot.wheels_enable(False)
 
 O driver completo está em :mod:`sentinel.sobot` e a configuração em
-:mod:`sentinel.config`.
+:mod:`sentinel.config`. Os dois periféricos opcionais ficam em módulos à parte,
+porque cada um traz uma dependência pesada só dele: :mod:`sentinel.visao`
+(webcam + OpenCV) e :mod:`sentinel.controle` (Logitech F710 + ``inputs``).
 """
-from .config import Config, find_config_file, load_config
+from .config import (
+    Config,
+    ControleConfig,
+    FaixaHSV,
+    VisaoConfig,
+    find_config_file,
+    load_config,
+    load_controle,
+    load_visao,
+)
 from .sobot import DEFAULT_BAUD, DEFAULT_PORT, SoBot, SoBotError, SoBotTimeout
 
 __version__ = "0.1.0"
 __all__ = [
     "Config",
+    "ControleConfig",
     "DEFAULT_BAUD",
     "DEFAULT_PORT",
+    "FaixaHSV",
     "SoBot",
     "SoBotError",
     "SoBotTimeout",
+    "VisaoConfig",
     "find_config_file",
     "load_config",
+    "load_controle",
+    "load_visao",
 ]

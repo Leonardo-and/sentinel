@@ -11,6 +11,10 @@ dependencies = ["pyserial>=3.5"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
+# Periféricos opcionais, cada um com sua dependência pesada. Na Raspberry:
+#   pip install -e ".[dev,visao,controle]"
+visao = ["opencv-python-headless>=4.8", "numpy>=1.26"]
+controle = ["inputs>=0.5"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -21,3 +21,67 @@ dw = 262.0
 # ca = 0.0   # curva no eixo:   PG_CA = ((valor_para_360 - 360) * 100) / 360
 # df = 0.0   # curva diferencial
 # ri = 0.0   # raio interno:    PG_RI = valor_para_100mm - 100
+
+# ----------------------------------------------------------------------------
+# Câmera (webcam USB na Raspberry). Faixas em HSV do OpenCV: matiz 0-179,
+# saturação e valor 0-255. Os números abaixo são pontos de partida genéricos —
+# calibre com o pallet real, na luz real:  python main.py --debug-visao
+# ----------------------------------------------------------------------------
+[visao]
+dispositivo = 0          # /dev/video0 na Pi
+largura = 320            # baixa resolução: mais fps e menos carga na Pi
+altura = 240
+area_min = 300           # px: abaixo disso é ruído; acima, nada é aceito
+area_max = 60000
+frames_estaveis = 3      # detecções seguidas antes de confiar no alvo
+abrir_kernel = 5         # 0 desliga; senão, tamanho ímpar da erode/dilate
+fechar_kernel = 5
+
+# Uma seção por cor. Sem todas as chaves, o padrão da seção entra.
+# O vermelho involve o zero do matiz: h_min > h_max = "de h_min a 179 e de 0 a h_max".
+[visao.cores.vermelho]
+h_min = 170
+h_max = 10
+s_min = 120
+s_max = 255
+v_min = 40
+v_max = 255
+
+[visao.cores.azul]
+h_min = 100
+h_max = 130
+s_min = 90
+s_max = 255
+v_min = 30
+v_max = 255
+
+[visao.cores.verde]
+h_min = 40
+h_max = 85
+s_min = 90
+s_max = 255
+v_min = 40
+v_max = 255
+
+[visao.cores.amarelo]
+h_min = 20
+h_max = 35
+s_min = 120
+s_max = 255
+v_min = 80
+v_max = 255
+
+# ----------------------------------------------------------------------------
+# Logitech F710. As chaves são os códigos crus que a biblioteca ``inputs`` emite.
+# Não confie no palpite: rode  python main.py --listar-botoes  e copie o que
+# aparecer. A cor precisa existir em [visao.cores.*].
+# ----------------------------------------------------------------------------
+[controle]
+# Botões que valem como parada de emergência (MT0 BC) a qualquer momento.
+parada = ["BTN_START", "BTN_SELECT"]
+
+[controle.botoes]
+BTN_SOUTH = "vermelho"
+BTN_EAST  = "azul"
+BTN_NORTH = "verde"
+BTN_WEST  = "amarelo"

@@ -19,21 +19,25 @@ Este repositório não é uma biblioteca nem um framework: é um conjunto de
 
 | Caminho | Papel |
 |---|---|
-| `main.py` | **A rotina.** É o arquivo que você edita e roda. Começa com "anda para frente e para". |
-| `sentinel.toml` | Porta, baud e calibração (`WD`/`DW`/`PG`). Versionado — meça as rodas e corrija aqui. |
+| `main.py` | **A rotina.** É o arquivo que você edita e roda. Começa com "anda para frente e para". Também tem a CLI de diagnóstico (`--debug-visao`, `--listar-botoes`). |
+| `sentinel.toml` | Porta, baud, calibração (`WD`/`DW`/`PG`), faixas de cor e mapa de botões. Versionado — meça as rodas e corrija aqui. |
 | `src/sentinel/sobot.py` | **O driver.** Talking completo com o robô, validado contra o Guia v0.4.11. Trate como código de terceiros: não edite sem necessidade. |
-| `src/sentinel/config.py` | Leitura do `sentinel.toml` (`tomllib`). |
-| `src/sentinel/__init__.py` | Reexporta `SoBot`, `SoBotError`, `SoBotTimeout`, `Config`, `load_config`. |
+| `src/sentinel/config.py` | Leitura do `sentinel.toml` (`tomllib`): `Config` (robô), `FaixaHSV`/`VisaoConfig` (câmera), `ControleConfig` (F710). |
+| `src/sentinel/visao.py` | Câmera USB + OpenCV:acha o bloco de uma cor e diz o desvio em px. Import de `cv2` é preguiçoso. |
+| `src/sentinel/controle.py` | Logitech F710 via `inputs`: botões viram cores e parada. Não-bloqueante, só borda de subida. |
+| `src/sentinel/__init__.py` | Reexporta `SoBot`, `SoBotError`, `SoBotTimeout`, `Config`, `load_config`, `load_visao`, `load_controle`. |
 | `docs/SOBOT_AGENT_GUIDE.md` | **Guia operacional** derivado do *Guia de Referência dos Comandos v0.4.11* e da *Apostila SoBot v0.4.17*. Leia antes de inventar comando. |
 | `docs/sobot_api.json` | Mesmo conteúdo do guia em formato estruturado. |
-| `tests/` | 44 testes que rodam **sem robô**, via `FakeSerial` (`tests/conftest.py`). |
+| `tests/` | 105 testes que rodam **sem robô**, via `FakeSerial` (`tests/conftest.py`), câmera falsa e gamepad falso. |
 
 ## Comandos
 
 ```bash
-.venv/bin/python main.py               # roda a rotina
-.venv/bin/python -m pytest -q          # testes (não precisa do robô)
-.venv/bin/ruff check .                 # lint
+.venv/bin/python main.py                          # roda a rotina
+.venv/bin/python main.py --debug-visao --cor azul # calibra a câmera (não move o robô)
+.venv/bin/python main.py --listar-botoes          # descobre os botões do F710
+.venv/bin/python -m pytest -q                     # testes (não precisa do robô)
+.venv/bin/ruff check .                            # lint
 ```
 
 Ambiente Python 3.11+ (testado em 3.14). O sistema é PEP 668 — **nunca** use
@@ -42,6 +46,17 @@ Ambiente Python 3.11+ (testado em 3.14). O sistema é PEP 668 — **nunca** use
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ```
+
+A webcam e o F710 são **extras**, porque trazem dependência pesada e nem toda
+rotina precisa deles: `visao = ["opencv-python-headless", "numpy"]` e
+`controle = ["inputs"]`. Na Pi: `pip install -e ".[dev,visao,controle]"`, e o
+`inputs` precisa de permissão de leitura em `/dev/input`
+(`sudo usermod -aG input pi`, depois logout).
+
+Nada de visão ou controle importa `cv2`/`inputs` no topo do módulo: o import é
+preguiçoso, dentro da função, com mensagem de erro que aponta o
+`pip install` certo. Assim o pacote importa (e os testes rodam) numa máquina sem
+câmera.
 
 ## Como escrever uma rotina nova
 

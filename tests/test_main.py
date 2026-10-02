@@ -53,3 +53,51 @@ def test_ganhos_sao_enviados_quando_configurados(bot_falso, monkeypatch):
     monkeypatch.setattr(main, "CFG", Config(so=1.35, ca=2.87))
     main.main()
     assert bot_falso.comandos[3:4] == ["PG SO1,35 CA2,87"]
+
+
+# --- roteamento da CLI --------------------------------------------------------
+@pytest.fixture
+def sem_robô(monkeypatch):
+    """Substitui as rotinas por dublês e registra o que foi chamado."""
+    chamados = []
+
+    monkeypatch.setattr(main, "main", lambda: chamados.append(("rotina", ())))
+    monkeypatch.setattr(main, "depurar_visao", lambda cor: chamados.append(("visao", cor)))
+    monkeypatch.setattr(main, "listar_botoes", lambda: chamados.append(("botoes", ())))
+    return chamados
+
+
+def test_cli_sem_argumentos_roda_a_rotina(sem_robô):
+    main.cli([])
+
+    assert sem_robô == [("rotina", ())]
+
+
+def test_cli_debug_de_visao_manda_a_cor(sem_robô):
+    main.cli(["--debug-visao", "--cor", "azul"])
+
+    assert sem_robô == [("visao", "azul")]
+
+
+def test_cli_debug_de_visao_corr_eh_vermelho(sem_robô):
+    main.cli(["--debug-visao"])
+
+    assert sem_robô == [("visao", "vermelho")]
+
+
+def test_cli_listar_botoes_nao_toca_no_robô(sem_robô):
+    main.cli(["--listar-botoes"])
+
+    assert sem_robô == [("botoes", ())]
+
+
+def test_cli_trata_ctrl_c_sem_traceback(sem_robô, monkeypatch, capsys):
+    def interrompe():
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(main, "listar_botoes", interrompe)
+    with pytest.raises(SystemExit) as erro:
+        main.cli(["--listar-botoes"])
+
+    assert erro.value.code == 130
+    assert "interrompido" in capsys.readouterr().out
