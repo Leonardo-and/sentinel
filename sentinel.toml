@@ -1,0 +1,23 @@
+# Configuração do Sentinel.
+#
+# Os nomes das chaves são os próprios códigos do robô: WD/DW em [rodas] e
+# SO/CA/DF/RI em [ganho]. Ver docs/SOBOT_AGENT_GUIDE.md §5 para a calibração.
+
+[serial]
+port = "/dev/ttyACM0"
+baud = 57600
+
+# Valores nominais de fábrica. Meça o diâmetro real das rodas e a distância
+# entre os pontos de contato, e corrija aqui antes de confiar em distâncias.
+[rodas]
+wd_esquerda = 100.0
+wd_direita = 100.0
+dw = 262.0
+
+# Ganho proporcional. Deixe como está até calibrar (guia §5); o driver ignora
+# chaves ausentes, então remova o que ainda não foi medido.
+[ganho]
+# so = 0.0   # reta:            PG_SO = (valor_para_1m - 1000) / 10
+# ca = 0.0   # curva no eixo:   PG_CA = ((valor_para_360 - 360) * 100) / 360
+# df = 0.0   # curva diferencial
+# ri = 0.0   # raio interno:    PG_RI = valor_para_100mm - 100

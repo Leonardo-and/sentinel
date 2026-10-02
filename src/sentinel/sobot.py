@@ -12,7 +12,7 @@ Regras do protocolo que este driver aplica por você:
   * respostas ERROR=xx viram exceção SoBotError.
 
 Uso rápido:
-    from sobot import SoBot
+    from sentinel import SoBot
     with SoBot() as bot:                       # /dev/ttyACM0, 57600
         bot.command_return(True, "MT0")        # pede "CR OK MT0" ao fim de cada movimento
         bot.wheels_enable(True)

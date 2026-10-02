@@ -1,0 +1,1737 @@
+{
+  "schema_version": "1.0",
+  "robot": {
+    "name": "SoBot",
+    "vendor": "SOLIS Tecnologia",
+    "type": "AGV/AMR de ensino com motores de passo (NEMA-23)",
+    "versions": [
+      "Starter",
+      "Starter + Elevador Pallet (Fork-Lift)",
+      "Starter + Elevador Eletroímãs (Magnetic-Lift)",
+      "Agri-Tech (webcam + tanque agro)"
+    ]
+  },
+  "sources": [
+    {
+      "file": "1 - APOSTILA-SoBot 1ª Edição 2025 v0.4.17.pdf",
+      "alias": "Apostila v0.4.17"
+    },
+    {
+      "file": "2 - GUIA DE REFERÊNCIA DOS COMANDOS PARA O ROBÔ SOLIS 2ª Edição 2025 v0.4.11.pdf",
+      "alias": "Guia de Referência v0.4.11"
+    }
+  ],
+  "protocol": {
+    "transport": "USB serial entre a placa host (ex.: Raspberry Pi 4B) e a Placa de Controle e Potência do SoBot",
+    "python_open": "serial.Serial('/dev/ttyACM0', 57600, timeout=0, dsrdtr=False)",
+    "port_default": "/dev/ttyACM0",
+    "baudrate": 57600,
+    "source_of_serial_params": "Apostila v0.4.17 §10.2 (Fig. 96/97) e código dos repositórios (Fig. 102/103)",
+    "encoding": "ASCII, letras MAIÚSCULAS obrigatórias",
+    "token_separator": "espaço",
+    "line_terminator_sent": "nenhum nos exemplos (write(b\"DO1 E1\") retorna 6 bytes)",
+    "response_terminator": "newline (os exemplos leem com readline())",
+    "decimal_separator": "vírgula (ex.: WD99,6; PG SO1,35; respostas tipo D+00500,00)",
+    "negative_values": "sinal '-' imediatamente antes do número (D-1000, PS-500, RI-5) ou após o comando (ML-, MR-)",
+    "first_token_rule": "O comando de identificação deve ser o primeiro token: WP, MT, PG, DO, AO, LT, BZ, SC, EL",
+    "multiple_ids_in_one_string": "Permitido nos exemplos: 'MT1 E1 PS500 MT2 E1 PS500' e 'PG SO1,35 CA2,87 DF3,52 RI-5'",
+    "other_boards": "Qualquer placa com serial USB serve (Raspberry, Arduino, Jetson, BeagleBone, ESP32...)"
+  },
+  "execution_model": {
+    "queue_capacity_action_commands": 100,
+    "queued_commands": "Comandos de ação são armazenados e executados em sequência (movimento fixo MT0/MT3, WP, PG, DO, AO, LT, BZ, SC/SD/RS, EL, DL, MT0 MS).",
+    "immediate_commands": "Executados na hora: modo contínuo (ME, MC, MF, MB, ML, MR, MP, MD, LM), BC, KC, modo pulsos (MT1/MT2), leituras (SS, SI, SL, DI, AI, SA), CR, e DO com TM.",
+    "return_when_enabled": "Se CR estiver habilitado, a resposta 'CR OK <ID>' vem quando o comando é processado/finalizado.",
+    "error_beep": "Em qualquer erro de comando a placa emite 2 beeps."
+  },
+  "hardware": {
+    "motion": {
+      "motors": "2 motores de passo NEMA-23 nas rodas + redução 3:1",
+      "step_angle_deg": 1.8,
+      "motor_steps_per_rev": 200,
+      "microstep": "1/4",
+      "pulses_per_motor_rev": 800,
+      "reduction": "3:1",
+      "pulses_per_wheel_rev": 2400,
+      "nominal_wheel_diameter_mm": 100,
+      "nominal_track_mm": 262,
+      "mm_per_pulse_nominal": 0.130899,
+      "torque": "15 kgf.cm -> 45 kgf.cm (holding) com a redução",
+      "max_speed_cm_s_api": 25,
+      "max_pulse_rate_pps": 2000,
+      "wheel_outputs": {
+        "MOTOR 01": "roda esquerda",
+        "MOTOR 02": "roda direita",
+        "MOTOR 03": "auxiliar (elevador, garra, etc.)"
+      }
+    },
+    "formulas": {
+      "pulses_for_distance": "pulsos = distancia_mm / (pi * D_roda / 2400)",
+      "pulses_for_pivot_turn": "distancia_roda = (pi * D_eixos) * (graus/360); pulsos = distancia_roda / mm_por_pulso",
+      "pulse_frequency": "freq = velocidade_mm_s / mm_por_pulso",
+      "examples": {
+        "1_metro": 7639,
+        "pivot_90_graus": 1572,
+        "diff_90_graus_raio_int_100": {
+          "roda_interna": 1199,
+          "roda_externa": 4343
+        }
+      },
+      "note": "A API já faz esses cálculos; só use ao operar no modo pulsos (MT1/MT2)."
+    },
+    "sonar_count": 8,
+    "sonar_model": "HC-SR04",
+    "sonar_range_mm": [
+      20,
+      4000
+    ],
+    "sonar_cone_deg": 15,
+    "sonar_layout": {
+      "SS1": "frontal (canto, lado esquerdo do robô)",
+      "SS2": "frontal central",
+      "SS3": "frontal (canto, lado direito)",
+      "SS4": "lateral direita",
+      "SS5": "traseira (canto direito)",
+      "SS6": "traseira central",
+      "SS7": "traseira (canto esquerdo)",
+      "SS8": "lateral esquerda",
+      "confidence": "inferido da figura do Guia §5.3 (frente à direita da imagem) e coerente com o código de exemplo SoBot-Ultrasonic-Sensor (frontais = [0],[1],[2]; laterais = [3],[7])"
+    },
+    "infrared": {
+      "model": "Sharp GP2Y0A02YK0F",
+      "range_cm": [
+        20,
+        150
+      ]
+    },
+    "line_sensors": {
+      "count": 5,
+      "read_command": "SL (retorna SL1..SL3 no exemplo)",
+      "note": "sensores 4 e 5 ligados em D1/D2 (Apostila Tab. 5)"
+    },
+    "io": {
+      "relay_outputs": "8 saídas de relé, contato seco 10 A",
+      "pwm_outputs": 2,
+      "digital_inputs": 8,
+      "analog_inputs": "6: 2x 0-5 V, 2x 0-10 V, 2x 4-20 mA",
+      "buzzer": true,
+      "led_tape_rgb": true,
+      "accelerometer": "integrado à placa",
+      "uart": "9600 bps, sem paridade, 1 stop bit",
+      "aux_power_outputs": "5 V, 12 V, 24 V + USB auxiliar"
+    },
+    "aux_pulse_interface": {
+      "description": "Controle externo de pulso/direção dos drivers: remover o jumper e ligar a interface auxiliar",
+      "max_logic_voltage_v": 3.3,
+      "note": "Alimentar a interface externa pelas saídas auxiliares da placa para manter a mesma referência; com o jumper no lugar o controle é pela própria placa."
+    },
+    "power": {
+      "nominal_voltage_v": 24,
+      "min_current_a": 5,
+      "options": [
+        "2x12V/5Ah série = 24V/5A (padrão Solis)",
+        "2x12V/7Ah série = 24V/7A",
+        "4 baterias (2 séries em paralelo) = 24V/10A"
+      ],
+      "external_power": "cordão umbilical no conector HP-3MD da tampa superior; chave seletora escolhe bateria x externa",
+      "charging": "remover as baterias do robô; usar carregador adequado ao modelo"
+    },
+    "rear_controls": {
+      "chave_seletora": "bateria x fonte externa",
+      "botao_emergencia": "NF, corta 100% da energia; só em emergência/acidente",
+      "botao_start": "pulsador NA, disponível para programação (entrada usada: não documentada)"
+    },
+    "modules": {
+      "pallet_elevator": {
+        "relays": "RL1-RL4 (fios 1-12 = NO/C/NC de cada relé) + 24V/GND",
+        "commands": "EL UP/DN/ST"
+      },
+      "electromagnet_elevator": {
+        "relays": "elevador em RL1-RL4; eletroímãs 1-4 em RL5-RL8 (NO)",
+        "commands": "EL UP/DN/ST + DO (mapeamento DO<->RL5..RL8 inferido; ver repositório SoBot-Control-Electromagnets)"
+      },
+      "agri_tech": {
+        "relays": "RL1-RL4 (NO) acionam bombas/solenoides; fios 6-8 não usados; fio 1 GND",
+        "camera": "webcam USB na Raspberry",
+        "commands": "DO1..DO4 (inferido)"
+      },
+      "note": "Elevador e Agri-Tech usam RL1-RL4: não usar DO1-DO4 para outras cargas quando o módulo estiver instalado."
+    }
+  },
+  "commands": [
+    {
+      "id": "wheel_params",
+      "title": "Parametrizar rodas (diâmetro e distância entre rodas)",
+      "category": "config",
+      "execution": "queued",
+      "templates": [
+        "WP MT{motor} WD{diametro_mm}",
+        "WP DW{distancia_mm}"
+      ],
+      "params": [
+        {
+          "name": "motor",
+          "code": "MT",
+          "type": "int",
+          "min": 1,
+          "max": 2,
+          "required": true,
+          "notes": "1 = roda esquerda (saída MOTOR 01); 2 = roda direita (saída MOTOR 02)"
+        },
+        {
+          "name": "diametro_mm",
+          "code": "WD",
+          "type": "decimal",
+          "min": 90.0,
+          "max": 110.0,
+          "unit": "mm",
+          "required": true,
+          "notes": "Vírgula como separador decimal (ex.: WD99,6). Acima do máximo é limitado ao máximo."
+        },
+        {
+          "name": "distancia_mm",
+          "code": "DW",
+          "type": "decimal",
+          "min": 240.0,
+          "max": 280.0,
+          "unit": "mm",
+          "required": true,
+          "notes": "Distância entre os pontos centrais de contato das rodas com o solo. Acima do máximo é limitada ao máximo."
+        }
+      ],
+      "preconditions": [
+        "'WP' deve ser o PRIMEIRO token do comando"
+      ],
+      "examples": [
+        {
+          "description": "Roda 1 = 99,6 mm; roda 2 = 100,32 mm; distância entre rodas = 260,35 mm",
+          "commands": [
+            "WP MT1 WD99,6",
+            "WP MT2 WD100,32",
+            "WP DW260,35"
+          ]
+        }
+      ],
+      "notes": [
+        "Valores nominais de referência: roda 100 mm, distância entre rodas 262 mm.",
+        "Cada comando de WD usa um 'MT' (1 ou 2); DW não usa MT."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.1"
+    },
+    {
+      "id": "proportional_gain",
+      "title": "Ganho proporcional (calibração de perdas mecânicas)",
+      "category": "config",
+      "execution": "queued",
+      "templates": [
+        "PG SO{pct} CA{pct} DF{pct} RI{pct}  (qualquer subconjunto)"
+      ],
+      "params": [
+        {
+          "name": "SO",
+          "code": "SO",
+          "type": "decimal",
+          "min": -99.99,
+          "max": 99.99,
+          "unit": "%",
+          "required": false,
+          "notes": "Straight On: ganho na distância em linha reta"
+        },
+        {
+          "name": "CA",
+          "code": "CA",
+          "type": "decimal",
+          "min": -99.99,
+          "max": 99.99,
+          "unit": "%",
+          "required": false,
+          "notes": "Curve Angle: ganho no ângulo de curva sobre o próprio eixo"
+        },
+        {
+          "name": "DF",
+          "code": "DF",
+          "type": "decimal",
+          "min": -99.99,
+          "max": 99.99,
+          "unit": "%",
+          "required": false,
+          "notes": "Differential Curve: ganho no ângulo da curva diferencial"
+        },
+        {
+          "name": "RI",
+          "code": "RI",
+          "type": "decimal",
+          "min": -99.99,
+          "max": 99.99,
+          "unit": "%",
+          "required": false,
+          "notes": "Radius Inner: ganho no raio interno da curva diferencial"
+        }
+      ],
+      "preconditions": [
+        "'PG' deve ser o PRIMEIRO token do comando",
+        "Sinal '-' antes do valor = ganho negativo"
+      ],
+      "formulas": {
+        "SO": "(valor_comandado_que_fez_1_metro_mm - 1000) / 10",
+        "CA": "((valor_comandado_que_fez_360_graus - 360) * 100) / 360",
+        "DF": "((valor_comandado_que_fez_360_graus_diferencial - 360) * 100) / 360",
+        "RI": "valor_comandado_que_fez_raio_100mm - 100"
+      },
+      "calibration_procedure": [
+        "Use os mesmos AT/DT/V da movimentação padrão do robô.",
+        "SO: marque o ponto de partida, comande 1000 mm à frente. Se não completar 1 m exato, reposicione e ajuste o valor comandado até o robô andar exatamente 1 m; use esse valor na fórmula.",
+        "CA: comande curva de 360° no próprio eixo; ajuste o valor comandado até o robô fechar exatamente 360°.",
+        "DF/RI: comande curva diferencial de 360° com raio interno 100 mm; ajuste o ângulo comandado até fechar 360° e o raio comandado até o raio interno real ser 100 mm."
+      ],
+      "examples": [
+        {
+          "description": "Exemplo do manual: 1013,5 mm comandados para 1 m reais => SO = 1,35%",
+          "commands": [
+            "PG SO1,35"
+          ]
+        },
+        {
+          "description": "Exemplo do manual: 370,34° para 360° reais => CA = 2,87%",
+          "commands": [
+            "PG CA2,87"
+          ]
+        },
+        {
+          "description": "Exemplo do manual: 372,68° => DF 3,52%; raio 95 mm para 100 mm reais => RI -5%",
+          "commands": [
+            "PG DF3,52",
+            "PG RI-5"
+          ]
+        },
+        {
+          "description": "Tudo em uma linha",
+          "commands": [
+            "PG SO1,35 CA2,87 DF3,52 RI-5"
+          ]
+        }
+      ],
+      "notes": [
+        "O ganho depende de piso, peso do robô e inclinação da pista; recalibre se mudarem.",
+        "O Guia lista a faixa como 0 a 99,99 com sinal '-' para negativo."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.2.6"
+    },
+    {
+      "id": "command_return",
+      "title": "Retorno de confirmação de execução (CR)",
+      "category": "config",
+      "execution": "immediate",
+      "templates": [
+        "CR1",
+        "CR0",
+        "<ID> CR1",
+        "<ID> CR0"
+      ],
+      "params": [
+        {
+          "name": "ID",
+          "type": "string",
+          "values": [
+            "MT0",
+            "MT3",
+            "LT",
+            "DO",
+            "AO",
+            "BZ",
+            "EL",
+            "DL",
+            "WP",
+            "PG"
+          ],
+          "required": true,
+          "notes": "Um de: MT0, MT3, LT, DO, AO, BZ, EL, DL, WP, PG. Sem ID = retorno geral."
+        }
+      ],
+      "response": {
+        "format": "CR OK <ID>",
+        "examples": [
+          "CR OK MT0",
+          "CR OK MT3",
+          "CR OK LT",
+          "CR OK DO1",
+          "CR OK AO1",
+          "CR OK BZ",
+          "CR OK EL",
+          "CR OK DL",
+          "CR OK WP",
+          "CR OK PG"
+        ],
+        "notes": "Para DO e AO o ID inclui o número da saída (DO1..DO8, AO1..AO2)."
+      },
+      "examples": [
+        {
+          "description": "Habilita retorno geral",
+          "commands": [
+            "CR1"
+          ]
+        },
+        {
+          "description": "Habilita retorno só dos movimentos das rodas",
+          "commands": [
+            "MT0 CR1"
+          ]
+        }
+      ],
+      "notes": [
+        "Não se aplica ao controle por pulsos (MT1/MT2).",
+        "O Guia §2 diz que a resposta é enviada quando o comando é processado e finalizado; §5.16 diz 'recebidos e executados'. Use 'CR OK MT0' para detectar o fim de um movimento fixo.",
+        "Estado padrão do CR após ligar o robô: não documentado."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.16"
+    },
+    {
+      "id": "wheels_enable",
+      "title": "Habilitar/desabilitar motores das rodas (modo fixo)",
+      "category": "motion_fixed",
+      "execution": "queued",
+      "templates": [
+        "MT0 E1",
+        "MT0 E0"
+      ],
+      "params": [
+        {
+          "name": "estado",
+          "code": "E",
+          "type": "int",
+          "min": 0,
+          "max": 1,
+          "values": [
+            0,
+            1
+          ],
+          "required": true,
+          "notes": "1 habilita, 0 desabilita"
+        }
+      ],
+      "examples": [
+        {
+          "description": "Habilitar antes de mover e desabilitar ao final",
+          "commands": [
+            "MT0 E1",
+            "MT0 E0"
+          ]
+        }
+      ],
+      "notes": [
+        "Padrão dos exemplos: E1 -> comandos de movimento -> E0.",
+        "'MT' deve ser o primeiro token."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.2.1"
+    },
+    {
+      "id": "move_straight_fixed",
+      "title": "Mover em linha reta por distância (modo fixo)",
+      "category": "motion_fixed",
+      "execution": "queued",
+      "templates": [
+        "MT0 D{distancia_mm} AT{acel_ms} DT{desacel_ms} V{vel_cm_s}"
+      ],
+      "params": [
+        {
+          "name": "distancia_mm",
+          "code": "D",
+          "type": "decimal",
+          "min": -65000.0,
+          "max": 65000.0,
+          "unit": "mm",
+          "required": true,
+          "notes": "Sem sinal = frente; sinal '-' = ré. Acima do máximo é limitado."
+        },
+        {
+          "name": "acel_ms",
+          "code": "AT",
+          "type": "int",
+          "min": 0,
+          "max": 60000,
+          "unit": "ms",
+          "required": true
+        },
+        {
+          "name": "desacel_ms",
+          "code": "DT",
+          "type": "int",
+          "min": 0,
+          "max": 60000,
+          "unit": "ms",
+          "required": true
+        },
+        {
+          "name": "vel_cm_s",
+          "code": "V",
+          "type": "int",
+          "min": 0,
+          "max": 25,
+          "unit": "cm/s",
+          "required": true,
+          "notes": "Velocidade de cruzeiro (constante entre a rampa de aceleração e a de desaceleração)."
+        }
+      ],
+      "preconditions": [
+        "Motores habilitados (MT0 E1)",
+        "Piso limpo, seco, sem fissuras/buracos"
+      ],
+      "examples": [
+        {
+          "description": "1 m à frente, rampas de 5 s, 10 cm/s",
+          "commands": [
+            "MT0 E1",
+            "MT0 D1000 AT5000 DT5000 V10",
+            "MT0 E0"
+          ]
+        },
+        {
+          "description": "1 m para trás",
+          "commands": [
+            "MT0 E1",
+            "MT0 D-1000 AT5000 DT5000 V10",
+            "MT0 E0"
+          ]
+        }
+      ],
+      "notes": [
+        "Comandos fixos entram na fila (até 100) e executam em sequência.",
+        "Um comando do modo contínuo tem prioridade sobre o fixo (ver 'mode_priority')."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.2.1"
+    },
+    {
+      "id": "turn_pivot_fixed",
+      "title": "Curva sobre o próprio eixo (modo fixo)",
+      "category": "motion_fixed",
+      "execution": "queued",
+      "templates": [
+        "MT0 D{angulo_graus} R|L AT{acel_ms} DT{desacel_ms} V{vel_cm_s}"
+      ],
+      "params": [
+        {
+          "name": "angulo_graus",
+          "code": "D",
+          "type": "decimal",
+          "min": 0,
+          "max": 400.0,
+          "unit": "graus",
+          "required": true,
+          "notes": "Com R ou L, D é ângulo. Texto do Guia diz 0 a 380; tabela diz 0 a 400,00. Máximo > 360° por acurácia."
+        },
+        {
+          "name": "direcao",
+          "type": "flag",
+          "values": [
+            "R",
+            "L"
+          ],
+          "required": true,
+          "notes": "R = direita, L = esquerda. Flags sem parâmetro."
+        },
+        {
+          "name": "acel_ms",
+          "code": "AT",
+          "type": "int",
+          "min": 0,
+          "max": 60000,
+          "unit": "ms",
+          "required": true
+        },
+        {
+          "name": "desacel_ms",
+          "code": "DT",
+          "type": "int",
+          "min": 0,
+          "max": 60000,
+          "unit": "ms",
+          "required": true
+        },
+        {
+          "name": "vel_cm_s",
+          "code": "V",
+          "type": "int",
+          "min": 0,
+          "max": 25,
+          "unit": "cm/s",
+          "required": true
+        }
+      ],
+      "examples": [
+        {
+          "description": "90° para a direita sobre o próprio eixo",
+          "commands": [
+            "MT0 E1",
+            "MT0 D90 R AT500 DT500 V10",
+            "MT0 E0"
+          ]
+        }
+      ],
+      "notes": [
+        "Sem o flag DF o robô gira sobre o próprio eixo (rodas em sentidos opostos relativos ao deslocamento)."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.2.1"
+    },
+    {
+      "id": "turn_differential_fixed",
+      "title": "Curva diferencial/circular (modo fixo)",
+      "category": "motion_fixed",
+      "execution": "queued",
+      "templates": [
+        "MT0 D{angulo_graus} DF R|L RI{raio_mm} [AT{acel_ms} DT{desacel_ms}] V{vel_cm_s}"
+      ],
+      "params": [
+        {
+          "name": "angulo_graus",
+          "code": "D",
+          "type": "decimal",
+          "min": 0,
+          "max": 400.0,
+          "unit": "graus",
+          "required": true
+        },
+        {
+          "name": "DF",
+          "code": "DF",
+          "type": "flag",
+          "required": true,
+          "notes": "Ativa curva diferencial"
+        },
+        {
+          "name": "direcao",
+          "type": "flag",
+          "values": [
+            "R",
+            "L"
+          ],
+          "required": true
+        },
+        {
+          "name": "raio_mm",
+          "code": "RI",
+          "type": "int",
+          "min": 10,
+          "max": 9999,
+          "unit": "mm",
+          "required": true,
+          "notes": "Raio interno (roda interna). Fora da faixa é limitado ao limite."
+        },
+        {
+          "name": "acel_ms",
+          "code": "AT",
+          "type": "int",
+          "min": 0,
+          "max": 60000,
+          "unit": "ms",
+          "required": false
+        },
+        {
+          "name": "desacel_ms",
+          "code": "DT",
+          "type": "int",
+          "min": 0,
+          "max": 60000,
+          "unit": "ms",
+          "required": false
+        },
+        {
+          "name": "vel_cm_s",
+          "code": "V",
+          "type": "int",
+          "min": 0,
+          "max": 25,
+          "unit": "cm/s",
+          "required": true
+        }
+      ],
+      "examples": [
+        {
+          "description": "90° para a esquerda, curva diferencial, raio interno 100 mm, 5 cm/s (exemplo do manual, sem AT/DT)",
+          "commands": [
+            "MT0 E1",
+            "MT0 D90 DF L RI100 V5",
+            "MT0 E0"
+          ]
+        }
+      ],
+      "notes": [
+        "Raio externo = raio interno + distância entre rodas.",
+        "O exemplo do manual omite AT/DT; o comportamento padrão de AT/DT no modo fixo quando omitidos não está documentado."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.2.1; Apostila v0.4.17 §8.3.2"
+    },
+    {
+      "id": "motor3_move",
+      "title": "Motor de passo 3 (auxiliar) por pulsos",
+      "category": "motion_fixed",
+      "execution": "queued",
+      "templates": [
+        "MT3 E1",
+        "MT3 AT{acel_ms} DT{desacel_ms} TP{pulsos} PS{pps}",
+        "MT3 E0",
+        "MT3 BC"
+      ],
+      "params": [
+        {
+          "name": "acel_ms",
+          "code": "AT",
+          "type": "int",
+          "min": 0,
+          "max": 60000,
+          "unit": "ms",
+          "required": true
+        },
+        {
+          "name": "desacel_ms",
+          "code": "DT",
+          "type": "int",
+          "min": 0,
+          "max": 60000,
+          "unit": "ms",
+          "required": true
+        },
+        {
+          "name": "pulsos",
+          "code": "TP",
+          "type": "int",
+          "min": -500000,
+          "max": 500000,
+          "unit": "pulsos",
+          "required": true,
+          "notes": "Sinal '-' = sentido reverso"
+        },
+        {
+          "name": "pps",
+          "code": "PS",
+          "type": "int",
+          "min": 0,
+          "max": 2000,
+          "unit": "pulsos/s",
+          "required": true,
+          "notes": "Resolução fixa: 800 pulsos por revolução"
+        }
+      ],
+      "examples": [
+        {
+          "description": "8000 pulsos a 800 pps com rampas de 2 s",
+          "commands": [
+            "MT3 E1",
+            "MT3 AT2000 DT2000 TP8000 PS800",
+            "MT3 E0"
+          ]
+        }
+      ],
+      "notes": [
+        "Saída 3 é auxiliar (elevadores, pallets, garras...). Controla um motor de passo isolado."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.2.1"
+    },
+    {
+      "id": "wheel_status",
+      "title": "Status de movimentação das rodas (distância/ângulo percorrido)",
+      "category": "motion_status",
+      "execution": "queued",
+      "templates": [
+        "MT0 MS"
+      ],
+      "response": {
+        "format": "MT0 MS D<sinal><valor>  |  MT0 MS D+R<graus>  |  MT0 MS D+L<graus>",
+        "examples": [
+          "MT0 MS D+00500,00",
+          "MT0 MS D-00500,00",
+          "MT0 MS D+R0090,00",
+          "MT0 MS D+L0090,00"
+        ],
+        "notes": "Valor com 4-5 dígitos inteiros, vírgula decimal. Máximo 'MT0 MS D+99999,00'. mm para linha reta; graus para curva (R/L)."
+      },
+      "examples": [
+        {
+          "description": "Mover e pedir status",
+          "commands": [
+            "MT0 E1",
+            "MT0 D500 AT2000 DT2000 V8",
+            "MT0 MS",
+            "MT0 E0"
+          ]
+        }
+      ],
+      "notes": [
+        "Retorna só movimentos feitos com MT0.",
+        "Funciona nos modos fixo e contínuo.",
+        "Mapeado como comando enfileirado (Guia §5.2.4)."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.2.4"
+    },
+    {
+      "id": "continuous_enable",
+      "title": "Habilitar/desabilitar modo contínuo",
+      "category": "motion_continuous",
+      "execution": "immediate",
+      "templates": [
+        "MT0 ME1",
+        "MT0 ME0"
+      ],
+      "params": [
+        {
+          "name": "estado",
+          "code": "ME",
+          "type": "int",
+          "min": 0,
+          "max": 1,
+          "values": [
+            0,
+            1
+          ],
+          "required": true
+        }
+      ],
+      "examples": [
+        {
+          "description": "Habilitar / desabilitar",
+          "commands": [
+            "MT0 ME1",
+            "MT0 ME0"
+          ]
+        }
+      ],
+      "source": "Guia de Referência v0.4.11 §5.2.2"
+    },
+    {
+      "id": "continuous_configure",
+      "title": "Configurar modo contínuo (rampas, velocidade, tipo de curva)",
+      "category": "motion_continuous",
+      "execution": "immediate",
+      "templates": [
+        "MT0 MC MD0 AT{acel_ms} DT{desacel_ms} V{vel_cm_s}",
+        "MT0 MC MD1 RI{raio_mm} AT{acel_ms} DT{desacel_ms} V{vel_cm_s}"
+      ],
+      "params": [
+        {
+          "name": "MD",
+          "code": "MD",
+          "type": "int",
+          "min": 0,
+          "max": 1,
+          "values": [
+            0,
+            1
+          ],
+          "required": true,
+          "notes": "0 = curva no próprio eixo; 1 = curva diferencial"
+        },
+        {
+          "name": "raio_mm",
+          "code": "RI",
+          "type": "int",
+          "min": 10,
+          "max": 9999,
+          "unit": "mm",
+          "default": 50,
+          "required": false,
+          "notes": "Só com MD1"
+        },
+        {
+          "name": "acel_ms",
+          "code": "AT",
+          "type": "int",
+          "min": 0,
+          "max": 60000,
+          "unit": "ms",
+          "default": 100,
+          "required": true
+        },
+        {
+          "name": "desacel_ms",
+          "code": "DT",
+          "type": "int",
+          "min": 0,
+          "max": 60000,
+          "unit": "ms",
+          "default": 100,
+          "required": true
+        },
+        {
+          "name": "vel_cm_s",
+          "code": "V",
+          "type": "int",
+          "min": 0,
+          "max": 25,
+          "unit": "cm/s",
+          "default": 2,
+          "required": true
+        }
+      ],
+      "examples": [
+        {
+          "description": "Curva no próprio eixo",
+          "commands": [
+            "MT0 MC MD0 AT100 DT100 V5"
+          ]
+        },
+        {
+          "description": "Curva diferencial, raio 100 mm",
+          "commands": [
+            "MT0 MC MD1 RI100 AT100 DT100 V5"
+          ]
+        }
+      ],
+      "notes": [
+        "Se não configurar: AT=DT=100 ms, V=2 cm/s, RI=50 mm."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.2.2"
+    },
+    {
+      "id": "continuous_move",
+      "title": "Movimentar em modo contínuo (até novo comando)",
+      "category": "motion_continuous",
+      "execution": "immediate",
+      "templates": [
+        "MT0 MF",
+        "MT0 MB",
+        "MT0 ML",
+        "MT0 ML-",
+        "MT0 MR",
+        "MT0 MR-",
+        "MT0 MP"
+      ],
+      "params": [
+        {
+          "name": "comando",
+          "type": "string",
+          "values": [
+            "MF",
+            "MB",
+            "ML",
+            "ML-",
+            "MR",
+            "MR-",
+            "MP"
+          ],
+          "required": true,
+          "notes": "MF frente; MB trás; ML/MR esquerda/direita; sufixo '-' = sentido reverso; MP pausa"
+        }
+      ],
+      "preconditions": [
+        "Modo contínuo habilitado (MT0 ME1)",
+        "Configurado com MT0 MC ... (senão valem os padrões)"
+      ],
+      "examples": [
+        {
+          "description": "Ir para frente, esperar, pausar",
+          "commands": [
+            "MT0 ME1",
+            "MT0 MC MD0 AT100 DT100 V5",
+            "MT0 MF",
+            "(sleep no host)",
+            "MT0 MP",
+            "MT0 ME0"
+          ]
+        }
+      ],
+      "notes": [
+        "Útil para joystick/teclado e navegação por sensores.",
+        "Temporização é feita no host (sleep), pois os comandos contínuos não entram na fila."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.2.2"
+    },
+    {
+      "id": "learn_mode",
+      "title": "Modo aprendizado (teach-in): acumular deslocamento resultante",
+      "category": "motion_continuous",
+      "execution": "immediate",
+      "templates": [
+        "MT0 MC LM1",
+        "MT0 MC LM0"
+      ],
+      "params": [
+        {
+          "name": "estado",
+          "code": "LM",
+          "type": "int",
+          "min": 0,
+          "max": 1,
+          "values": [
+            0,
+            1
+          ],
+          "required": true
+        }
+      ],
+      "sequence_example": [
+        "MT0 ME1",
+        "(sleep 0.1)",
+        "MT0 MC LM1",
+        "(sleep 1)",
+        "MT0 MC AT100 DT100 V5",
+        "MT0 MF",
+        "(sleep 2)",
+        "MT0 MB",
+        "(sleep 1)",
+        "MT0 MP",
+        "MT0 MS",
+        "MT0 ME0",
+        "MT0 MC LM0"
+      ],
+      "notes": [
+        "Com LM1: frente incrementa e trás decrementa a distância acumulada (e analogamente graus em curvas); 'MT0 MS' devolve o resultante.",
+        "Após ler com MT0 MS o robô fica pronto para aprender novo movimento.",
+        "Insira atrasos (sleep) antes e depois de LM1 para a configuração ser processada."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.2.5"
+    },
+    {
+      "id": "stop_break",
+      "title": "Parar com desaceleração (Break) e limpar fila",
+      "category": "stop",
+      "execution": "immediate",
+      "templates": [
+        "MT0 BC",
+        "MT3 BC"
+      ],
+      "notes": [
+        "Desacelera conforme DT já configurado e limpa a fila de ações.",
+        "No modo contínuo equivale a pausa; no fixo interrompe, desacelera e limpa a fila.",
+        "NÃO funciona para MT1/MT2 (modo pulsos).",
+        "Break com DT muito baixo pode causar danos mecânicos/elétricos irreversíveis."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.2.3"
+    },
+    {
+      "id": "stop_kill",
+      "title": "Parada imediata (Kill)",
+      "category": "stop",
+      "execution": "immediate",
+      "templates": [
+        "KC"
+      ],
+      "severity": "emergency",
+      "notes": [
+        "Para na hora e limpa a fila de ações, SEM desaceleração.",
+        "Só em extrema urgência: pode causar danos mecânicos e elétricos irreversíveis (inércia x peso).",
+        "Não funciona para MT1/MT2."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.2.3"
+    },
+    {
+      "id": "pulse_mode",
+      "title": "Controle de rodas por pulsos por segundo (MT1/MT2)",
+      "category": "motion_pulse",
+      "execution": "immediate",
+      "templates": [
+        "MT1 E1",
+        "MT1 E1 PS{pps}",
+        "MT1 E0",
+        "MT2 E1",
+        "MT2 E1 PS{pps}",
+        "MT2 E0",
+        "MT1 E1 PS{pps} MT2 E1 PS{pps}"
+      ],
+      "params": [
+        {
+          "name": "pps",
+          "code": "PS",
+          "type": "int",
+          "min": -2000,
+          "max": 2000,
+          "unit": "pulsos/s",
+          "required": true,
+          "notes": "Sinal '-' = reverso. Mesmo sinal nas duas rodas = reta; sinais opostos = giro no eixo; módulos diferentes = curva diferencial."
+        }
+      ],
+      "examples": [
+        {
+          "description": "Motor 1 a 200 pps por 2 s",
+          "commands": [
+            "MT1 E1",
+            "MT1 E1 PS200",
+            "(sleep 2)",
+            "MT1 E0"
+          ]
+        },
+        {
+          "description": "Ambos à frente a 500 pps",
+          "commands": [
+            "MT1 E1 MT2 E1",
+            "MT1 E1 PS500 MT2 E1 PS500",
+            "(sleep 5)",
+            "MT1 E0 MT2 E0"
+          ]
+        },
+        {
+          "description": "Ambos para trás",
+          "commands": [
+            "MT1 E1 MT2 E1",
+            "MT1 E1 PS-500 MT2 E1 PS-500",
+            "(sleep 5)",
+            "MT1 E0 MT2 E0"
+          ]
+        },
+        {
+          "description": "Giro à esquerda no eixo",
+          "commands": [
+            "MT1 E1 MT2 E1",
+            "MT1 E1 PS-500 MT2 E1 PS500",
+            "(sleep 5)",
+            "MT1 E0 MT2 E0"
+          ]
+        },
+        {
+          "description": "Curva diferencial à direita",
+          "commands": [
+            "MT1 E1 MT2 E1",
+            "MT1 E1 PS500 MT2 E1 PS200",
+            "(sleep 5)",
+            "MT1 E0 MT2 E0"
+          ]
+        }
+      ],
+      "notes": [
+        "Não misture MT0 com MT1/MT2: gera ERROR=02.",
+        "CR e BC/KC não se aplicam a este modo.",
+        "MT1 = roda esquerda, MT2 = roda direita."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.2.7"
+    },
+    {
+      "id": "mode_priority",
+      "title": "Prioridade entre modo contínuo e fixo",
+      "category": "motion_rules",
+      "execution": "n/a",
+      "rules": [
+        "Se o modo contínuo está ativo e chega um comando fixo, o fixo só executa quando o contínuo for pausado.",
+        "Se um comando fixo está em curso e chega um contínuo, o robô desacelera e executa o contínuo SEM terminar o fixo.",
+        "Mistura exige atenção para evitar problemas mecânicos/elétricos."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.2"
+    },
+    {
+      "id": "read_sonar",
+      "title": "Ler sensores ultrassônicos (SONAR)",
+      "category": "sensors",
+      "execution": "immediate",
+      "templates": [
+        "SS0",
+        "SS1",
+        "SS2",
+        "SS3",
+        "SS4",
+        "SS5",
+        "SS6",
+        "SS7",
+        "SS8"
+      ],
+      "params": [
+        {
+          "name": "n",
+          "code": "SS",
+          "type": "int",
+          "min": 0,
+          "max": 8,
+          "required": true,
+          "notes": "0 = todos; 1..8 = sensor individual"
+        }
+      ],
+      "response": {
+        "format": "SS<n> <dddd> [SS<m> <dddd> ...]",
+        "examples": [
+          "SS1 0150",
+          "SS1 FFFF",
+          "SS1 NULL",
+          "SS1 0150 SS2 0210 SS3 0182 SS4 1140 SS5 1352 SS6 2540 SS7 1364 SS8 1193"
+        ],
+        "values": {
+          "dddd": "distância em mm (0-4000)",
+          "FFFF": "acima de 4000 mm",
+          "NULL": "falha de medição ou sensor desconectado"
+        }
+      },
+      "notes": [
+        "Faixa 4 m; mínimo 2 cm; cone ~15° (HC-SR04, Apostila §7.4).",
+        "Ordem dos sensores na figura do Guia (frente à direita): SS1, SS2, SS3 = três frontais; SS4 = lateral; SS5-SS7 = traseira; SS8 = lateral oposta. Posição exata por sensor: ver 'hardware.sonar_layout' (inferida da figura)."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.3; Apostila v0.4.17 §7.4"
+    },
+    {
+      "id": "read_infrared",
+      "title": "Ler sensor infravermelho de distância (frontal)",
+      "category": "sensors",
+      "execution": "immediate",
+      "templates": [
+        "SI"
+      ],
+      "response": {
+        "format": "SI <ddd>",
+        "examples": [
+          "SI 050",
+          "SI FFF"
+        ],
+        "values": {
+          "ddd": "distância em cm (20-150)",
+          "FFF": "acima de 150 cm"
+        }
+      },
+      "notes": [
+        "Sharp GP2Y0A02YK0F, 20 a 150 cm."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.4; Apostila v0.4.17 §7.5"
+    },
+    {
+      "id": "read_line",
+      "title": "Ler sensores de linha (fotoelétricos)",
+      "category": "sensors",
+      "execution": "immediate",
+      "templates": [
+        "SL"
+      ],
+      "response": {
+        "format": "SL1 <b> SL2 <b> SL3 <b>",
+        "examples": [
+          "SL1 0 SL2 1 SL3 0"
+        ],
+        "values": {
+          "0": "superfície reflexiva (branco)",
+          "1": "superfície não reflexiva (preto)"
+        }
+      },
+      "notes": [
+        "A PCI tem 5 sensores (Apostila §12.1.2), mas o exemplo do Guia retorna SL1..SL3.",
+        "Apostila Tab. 5: fios dos sensores 4 e 5 ligam em D1 e D2 (entradas digitais) -> provável leitura via DI1/DI2 (verificar no robô)."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.5; Apostila v0.4.17 §9.2, §12.1.2, §15.2"
+    },
+    {
+      "id": "read_digital_inputs",
+      "title": "Ler entradas digitais",
+      "category": "io",
+      "execution": "immediate",
+      "templates": [
+        "DI0",
+        "DI1",
+        "..",
+        "DI8"
+      ],
+      "params": [
+        {
+          "name": "n",
+          "code": "DI",
+          "type": "int",
+          "min": 0,
+          "max": 8,
+          "required": true,
+          "notes": "0 = todas"
+        }
+      ],
+      "response": {
+        "format": "DI<n> <0|1> [...]",
+        "examples": [
+          "DI1 0",
+          "DI1 1 DI2 1 DI3 0 DI4 0 DI5 0 DI6 0 DI7 0 DI8 0"
+        ]
+      },
+      "source": "Guia de Referência v0.4.11 §5.6"
+    },
+    {
+      "id": "read_analog_inputs",
+      "title": "Ler entradas analógicas",
+      "category": "io",
+      "execution": "immediate",
+      "templates": [
+        "AI1",
+        "AI2",
+        "AI3",
+        "AI4",
+        "AI5",
+        "AI6"
+      ],
+      "params": [
+        {
+          "name": "n",
+          "code": "AI",
+          "type": "int",
+          "min": 1,
+          "max": 6,
+          "required": true,
+          "notes": "AI1,AI2: 0-5 V; AI3,AI4: 0-10 V; AI5,AI6: 4-20 mA"
+        }
+      ],
+      "response": {
+        "format": "AI<n> <valor>",
+        "examples": [
+          "AI1 1550",
+          "AI3 08100",
+          "AI5 009800"
+        ],
+        "units": {
+          "AI1-AI4": "milivolts (AI1: 4 dígitos, AI3: 5 dígitos)",
+          "AI5-AI6": "microamperes (6 dígitos)"
+        }
+      },
+      "source": "Guia de Referência v0.4.11 §5.8"
+    },
+    {
+      "id": "read_accelerometer",
+      "title": "Ler acelerômetro/giroscópio/temperatura",
+      "category": "sensors",
+      "execution": "immediate",
+      "templates": [
+        "SA"
+      ],
+      "response": {
+        "format": "AX<g> AY<g> AZ<g> T<°C> GX<°/s> GY<°/s> GZ<°/s>",
+        "examples": [
+          "AX0,00 AY0,00 AZ0,91 T32,6 GX10,0 GY-0,4 GZ-2,0"
+        ],
+        "notes": "Vírgula decimal; campos colados ao rótulo."
+      },
+      "notes": [
+        "Aceleração ±2 g; giroscópio ±25 °/s (conforme o manual); temperatura -40 a 85 °C."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.12"
+    },
+    {
+      "id": "digital_output",
+      "title": "Controlar saídas digitais (relés 10 A, contato seco)",
+      "category": "io",
+      "execution": "queued (immediate se usar TM)",
+      "templates": [
+        "DO{n} E1",
+        "DO{n} E0",
+        "DO{n} E1 TM{ms}"
+      ],
+      "params": [
+        {
+          "name": "n",
+          "code": "DO",
+          "type": "int",
+          "min": 1,
+          "max": 8,
+          "required": true
+        },
+        {
+          "name": "estado",
+          "code": "E",
+          "type": "int",
+          "min": 0,
+          "max": 1,
+          "required": true
+        },
+        {
+          "name": "timer_ms",
+          "code": "TM",
+          "type": "int",
+          "min": 0,
+          "max": 60000,
+          "unit": "ms",
+          "required": false,
+          "notes": "Desliga sozinha após o tempo"
+        }
+      ],
+      "examples": [
+        {
+          "description": "Saída 1 liga; saída 2 liga por 2 s; saída 1 desliga",
+          "commands": [
+            "DO1 E1",
+            "DO2 E1 TM2000",
+            "(sleep 1)",
+            "DO1 E0"
+          ]
+        }
+      ],
+      "notes": [
+        "Controle sempre individual (uma saída por comando).",
+        "'DO' deve ser o primeiro token."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.7; Apostila v0.4.17 §12.1.2"
+    },
+    {
+      "id": "analog_output_pwm",
+      "title": "Controlar saídas analógicas PWM",
+      "category": "io",
+      "execution": "queued",
+      "templates": [
+        "AO{n} E1 F{hz} DC{pct}",
+        "AO{n} E0"
+      ],
+      "params": [
+        {
+          "name": "n",
+          "code": "AO",
+          "type": "int",
+          "min": 1,
+          "max": 2,
+          "required": true
+        },
+        {
+          "name": "estado",
+          "code": "E",
+          "type": "int",
+          "min": 0,
+          "max": 1,
+          "required": true
+        },
+        {
+          "name": "hz",
+          "code": "F",
+          "type": "int",
+          "min": 0,
+          "max": 1000,
+          "unit": "Hz",
+          "required": true
+        },
+        {
+          "name": "pct",
+          "code": "DC",
+          "type": "int",
+          "min": 0,
+          "max": 100,
+          "unit": "%",
+          "required": true,
+          "notes": "Duty cycle"
+        }
+      ],
+      "examples": [
+        {
+          "description": "AO1 a 1 kHz, 30% por 5 s",
+          "commands": [
+            "AO1 E1 F1000 DC30",
+            "(sleep 5)",
+            "AO1 E0"
+          ]
+        }
+      ],
+      "source": "Guia de Referência v0.4.11 §5.9"
+    },
+    {
+      "id": "led_tape",
+      "title": "Fita de LED RGB",
+      "category": "io",
+      "execution": "queued",
+      "templates": [
+        "LT E1 RD{r} GR{g} BL{b}",
+        "LT E0"
+      ],
+      "params": [
+        {
+          "name": "estado",
+          "code": "E",
+          "type": "int",
+          "min": 0,
+          "max": 1,
+          "required": true
+        },
+        {
+          "name": "r",
+          "code": "RD",
+          "type": "int",
+          "min": 0,
+          "max": 255,
+          "required": true
+        },
+        {
+          "name": "g",
+          "code": "GR",
+          "type": "int",
+          "min": 0,
+          "max": 255,
+          "required": true
+        },
+        {
+          "name": "b",
+          "code": "BL",
+          "type": "int",
+          "min": 0,
+          "max": 255,
+          "required": true
+        }
+      ],
+      "examples": [
+        {
+          "description": "Vermelho (baixa intensidade)",
+          "commands": [
+            "LT E1 RD50 GR0 BL0"
+          ]
+        },
+        {
+          "description": "Verde",
+          "commands": [
+            "LT E1 RD0 GR50 BL0"
+          ]
+        },
+        {
+          "description": "Desligar",
+          "commands": [
+            "LT E0"
+          ]
+        }
+      ],
+      "notes": [
+        "Cuidado com intensidade máxima: consumo alto, principalmente na bateria.",
+        "O manual usa a fita para sinalizar estados da lógica (ex.: verde = andando, azul = desvio)."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.10"
+    },
+    {
+      "id": "buzzer",
+      "title": "Buzzer (sinalizador sonoro intermitente)",
+      "category": "io",
+      "execution": "queued",
+      "templates": [
+        "BZ E1",
+        "BZ E0"
+      ],
+      "params": [
+        {
+          "name": "estado",
+          "code": "E",
+          "type": "int",
+          "min": 0,
+          "max": 1,
+          "required": true
+        }
+      ],
+      "examples": [
+        {
+          "description": "Ligar 5 s e desligar",
+          "commands": [
+            "BZ E1",
+            "(sleep 5)",
+            "BZ E0"
+          ]
+        }
+      ],
+      "source": "Guia de Referência v0.4.11 §5.11"
+    },
+    {
+      "id": "uart",
+      "title": "Comunicação serial UART com dispositivo externo",
+      "category": "io",
+      "execution": "queued",
+      "templates": [
+        "SC E1",
+        "SC E0",
+        "SC E1 SD{n} {texto}",
+        "SC RS"
+      ],
+      "params": [
+        {
+          "name": "n",
+          "code": "SD",
+          "type": "int",
+          "min": 0,
+          "max": 15,
+          "unit": "bytes",
+          "required": true,
+          "notes": "Quantidade de bytes do texto que vem em seguida"
+        },
+        {
+          "name": "texto",
+          "type": "string",
+          "required": true,
+          "notes": "Exatamente n caracteres"
+        }
+      ],
+      "response": {
+        "format": "SC RS <caracteres recebidos>",
+        "examples": [
+          "SC RS 0123ABCD"
+        ]
+      },
+      "hardware": {
+        "baud": 9600,
+        "parity": "none",
+        "stop_bits": 1
+      },
+      "examples": [
+        {
+          "description": "Enviar e ler",
+          "commands": [
+            "SC E1 SD5 HELLO",
+            "SC E1 SD2 OK",
+            "SC RS"
+          ]
+        }
+      ],
+      "notes": [
+        "Máximo 15 bytes por envio/leitura.",
+        "Bytes recebidos só são repassados ao USB se a UART estiver habilitada (E1).",
+        "CR/LF recebidos também ficam no buffer.",
+        "A leitura só enxerga caracteres recebidos depois de enviar dados ao dispositivo externo."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.13"
+    },
+    {
+      "id": "elevator",
+      "title": "Módulo elevador",
+      "category": "modules",
+      "execution": "queued",
+      "templates": [
+        "EL UP",
+        "EL DN",
+        "EL ST"
+      ],
+      "params": [
+        {
+          "name": "acao",
+          "type": "string",
+          "values": [
+            "UP",
+            "DN",
+            "ST"
+          ],
+          "required": true,
+          "notes": "UP sobe, DN desce, ST para"
+        }
+      ],
+      "examples": [
+        {
+          "description": "Descer, parar, subir",
+          "commands": [
+            "EL DN",
+            "(sleep 2)",
+            "EL ST",
+            "(sleep 2)",
+            "EL UP"
+          ]
+        },
+        {
+          "description": "Curso completo com DL (fila)",
+          "commands": [
+            "EL DN",
+            "DL7000",
+            "EL UP",
+            "DL7000",
+            "EL ST"
+          ]
+        }
+      ],
+      "notes": [
+        "O elevador anda até o fim de curso ou até receber ST.",
+        "Ligado às saídas de relé RL1-RL4 (ver hardware.modules)."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.14; Apostila v0.4.17 §9.2.1"
+    },
+    {
+      "id": "delay",
+      "title": "Atraso na fila de comandos (DL)",
+      "category": "flow",
+      "execution": "queued",
+      "templates": [
+        "DL{ms}"
+      ],
+      "params": [
+        {
+          "name": "ms",
+          "code": "DL",
+          "type": "int",
+          "min": 50,
+          "max": 60000,
+          "unit": "ms",
+          "required": true,
+          "notes": "Fora da faixa é limitado"
+        }
+      ],
+      "notes": [
+        "Pausa a EXECUÇÃO da fila no robô (diferente de sleep no host, que só atrasa o envio)."
+      ],
+      "source": "Guia de Referência v0.4.11 §5.15"
+    }
+  ],
+  "response_formats": {
+    "sonar": "SS<n> <mm|FFFF|NULL>",
+    "infrared": "SI <cm|FFF>",
+    "line": "SL1 <0|1> SL2 <0|1> SL3 <0|1>",
+    "digital_in": "DI<n> <0|1>",
+    "analog_in": "AI<n> <valor> (mV para AI1-4, µA para AI5-6)",
+    "accelerometer": "AX AY AZ T GX GY GZ colados ao valor, vírgula decimal",
+    "status": "MT0 MS D<±>dddd,dd | D+R<graus> | D+L<graus>",
+    "uart_read": "SC RS <chars>",
+    "command_return": "CR OK <ID>"
+  },
+  "errors": {
+    "ERROR=00": "Comando totalmente desconhecido.",
+    "ERROR=01 <ID>": "Erro de sintaxe no comando de identificação <ID>. IDs documentados: MT0, MT1, MT2, MT3, SS, DI, DO, AI, AO, LT, BZ, SC, EL, DL, WP, PG.",
+    "ERROR=02 <comando>": "Mistura de modos: MT0 enviado enquanto as rodas estão em modo pulsos (MT1/MT2) ou o inverso. Ex.: 'ERROR=02 MT1 E1 MT2 E1', 'ERROR=02 MT0 E1'.",
+    "audible": "2 beeps indicam erro.",
+    "not_documented": "SI, SL, SA e MS não têm código de erro listado."
+  },
+  "safety_rules": [
+    "Piso limpo, seco, sem fissuras/buracos (evita imprecisão e dano às rodas e à esfera transferidora).",
+    "KC (Kill) só em emergência extrema; BC/KC com desaceleração curta podem danificar motores/drivers de forma irreversível.",
+    "Botão de emergência corta 100% da energia; usar só em emergência/acidente.",
+    "Nunca aplicar mais de 3,3 V nas linhas de pulso/direção da interface auxiliar.",
+    "Alimentação: 24 V, mínimo 5 A.",
+    "Fita LED em intensidade máxima consome muito, sobretudo na bateria.",
+    "Evitar a 'curva proibida' (enviar pulsos a só uma roda e travar a outra): atrito danifica a roda parada e prejudica a precisão.",
+    "Não misturar MT0 com MT1/MT2.",
+    "Ao mexer em placas: pulseira/luvas antiestáticas; conexões das placas são expostas.",
+    "Fechar a tampa superior somente depois de fazer as ligações elétricas dos módulos.",
+    "Firmware: nunca desligar nem remover o USB durante a gravação; usar só .bin fornecido pela Solis."
+  ],
+  "known_doc_issues": [
+    "Guia §5.2.1 Tab. 3: texto diz ângulo de curva 0-380; coluna de faixa diz 0-400,00.",
+    "Guia §5.2.1.4: título diz 'curva no próprio eixo a esquerda', mas o exemplo usa curva DIFERENCIAL (DF L RI100).",
+    "Guia Tab. 21: RD descrito como 'REED' (é RED, vermelho). Tab. 25: descrição do ST repete 'irá se movimentar para cima' (ST apenas para o elevador).",
+    "Guia §5.2.5: texto do exemplo de aprendizado fala em resultante de 55 mm, mas o retorno mostrado é D+00050,00.",
+    "Guia §2 diz que 'status' é imediato; §5.2.4 diz que 'MT0 MS' é armazenado e executado em sequência.",
+    "Apostila: 5 sensores de linha, mas SL do Guia retorna 3; sensores 4 e 5 em D1/D2 (chamados 'saída digital' na Tab. 5).",
+    "Padrões não documentados: estado do CR ao ligar; AT/DT omitidos no modo fixo; botão Start (qual entrada); mínimo seguro de DT.",
+    "Numeração repetida na Apostila §14 (14.1-14.3 aparecem duas vezes)."
+  ],
+  "code_dictionary": {
+    "AI": "Input Analog",
+    "AO": "Output Analog Pwm",
+    "AT": "Acceleration Time",
+    "BC": "Break Command",
+    "BL": "Blue",
+    "BZ": "Buzzer",
+    "CA": "Curve Angle",
+    "CR": "Command Return",
+    "D": "Distance",
+    "DC": "Duty-Cycle",
+    "DF": "Differential Curve",
+    "DI": "Input Digital",
+    "DL": "Delay",
+    "DN": "Down",
+    "DO": "Output Digital",
+    "DT": "Deceleration Time",
+    "DW": "Distance Wheel",
+    "E": "Enable",
+    "EL": "Elevator",
+    "F": "Frequency (Hz)",
+    "GR": "Green",
+    "KC": "Kill Command",
+    "L": "Left",
+    "LM": "Learn Movements",
+    "LT": "Led Tape",
+    "MB": "Movement Back",
+    "MC": "Movement Continuous",
+    "MD": "Movement Differential",
+    "ME": "Movement Enable",
+    "MF": "Movement Forward",
+    "ML": "Movement Left",
+    "MP": "Movement Pause",
+    "MR": "Movement Right",
+    "MS": "Movement Status",
+    "MT": "Motor",
+    "PG": "Proportional Gain",
+    "PS": "Pulse Speed",
+    "R": "Right",
+    "RD": "Red",
+    "RI": "Radius Inner",
+    "RS": "Read Serial",
+    "SA": "Sensor Accelerometer",
+    "SC": "Serial Communication",
+    "SD": "Send Serial",
+    "SI": "Sensor Infrared",
+    "SL": "Sensor Line",
+    "SO": "Straight On",
+    "SS": "Sensor Sonar",
+    "ST": "Stop",
+    "TM": "Timer",
+    "TP": "Total Pulses",
+    "UP": "Up",
+    "V": "Velocity",
+    "WD": "Wheel Diameter",
+    "WP": "Wheel Parameters"
+  }
+}

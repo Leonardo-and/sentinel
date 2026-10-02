@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sentinel"
+version = "0.1.0"
+description = "Rotinas de controle do Sentinel, um SoBot (SOLIS Tecnologia)"
+requires-python = ">=3.11"
+dependencies = ["pyserial>=3.5"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Driver herdado do projeto original, já validado contra o Guia v0.4.11.
+# Mantido verbatim: sem modernização automática de anotações (typing.Optional
+# em vez de PEP 604) para não gerar ruído num arquivo que não vamos reescrever.
+"src/sentinel/sobot.py" = ["UP006", "UP007", "UP035", "UP045", "E501", "W292", "B904"]
