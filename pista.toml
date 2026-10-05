@@ -1,0 +1,90 @@
+# Pista do simulador. Gerado pelo painel (botão Salvar);
+# editar à mão funciona igual. Medidas em milímetros.
+
+[pista]
+largura = 3000
+altura = 2000
+cor_piso = "branco"
+
+[[pista.paredes]]
+x1 = 0
+y1 = 0
+x2 = 3000
+y2 = 0
+espessura = 40
+
+[[pista.paredes]]
+x1 = 3000
+y1 = 0
+x2 = 3000
+y2 = 2000
+espessura = 40
+
+[[pista.paredes]]
+x1 = 3000
+y1 = 2000
+x2 = 0
+y2 = 2000
+espessura = 40
+
+[[pista.paredes]]
+x1 = 0
+y1 = 2000
+x2 = 0
+y2 = 0
+espessura = 40
+
+[[pista.alvos]]
+nome = "prateleira_azul"
+x = 2600
+y = 1600
+cor = "azul"
+
+[[pista.faixas]]
+x1 = 0
+y1 = 1000
+x2 = 3000
+y2 = 1000
+largura = 40
+
+[[pista.objetos]]
+id = "pallet1"
+x = 1500
+y = 700
+largura = 300
+altura = 220
+cor = "vermelho"
+pegavel = true
+
+[montagem]
+x = 300
+y = 300
+angulo = 0
+
+[robo]
+raio_corpo = 200
+raio_pegagem = 250
+altura_elevador = 400
+duracao_elevador = 7
+
+[robo.camera]
+altura = 250
+tilt = 25
+fov = 70
+
+# id = [x, y, ângulo]; ângulo 0 = frente, positivo = à esquerda.
+[robo.sonares]
+1 = [175, -140, -35, 0]
+2 = [210, 0, 0, 0]
+3 = [175, 140, 35, 0]
+4 = [0, 165, 90, 0]
+5 = [-150, 130, 135, 0]
+6 = [-200, 0, 180, 0]
+7 = [-150, -130, -135, 0]
+8 = [0, -165, -90, 0]
+
+# id = [x, y]; 1 = esquerda, 2 = centro, 3 = direita.
+[robo.linha]
+1 = [110, -55]
+2 = [110, 0]
+3 = [110, 55]

@@ -26,13 +26,27 @@ não obrigar a instalar OpenCV num projeto que só anda reto:
 
 ## Rodando
 
-Edite `main.py` e execute. A rotina inicial anda 500 mm para frente e para:
+A rotina está na tabela `PASSOS`, no topo de `main.py`. Cada linha é um `MT0`:
+
+```python
+PASSOS = (
+    ("mover", 700),           # reto para a frente
+    ("virar", 90, "right"),   # meia-volta para a direita
+    ("mover", 500),           # frente de novo
+    ("virar", 45, "left"),    # curva de 45°
+    ("mover", -400),          # ré
+    ("mover", 600),           # frente, e acabou
+)
+```
+
+Edite os números e execute:
 
 ```bash
 .venv/bin/python main.py
 ```
 
-Com `VERBOSO = True` você vê o protocolo inteiro na tela:
+Com `VERBOSO = True` você vê o protocolo inteiro na tela, um par de comando e
+ack por passo:
 
 ```
 >> WP MT1 WD100
@@ -41,10 +55,47 @@ Com `VERBOSO = True` você vê o protocolo inteiro na tela:
 >> MT0 CR1
 << CR OK MT0
 >> MT0 E1
->> MT0 D500 AT1000 DT1000 V10
+>> MT0 D700 AT1000 DT1000 V10
 << CR OK MT0
+>> MT0 D90 R AT1000 DT1000 V10
+<< CR OK MT0
+...
 >> MT0 E0
 ```
+
+## Simulador
+
+A mesma rotina, contra uma placa virtual em vez do robô. Nada sai para a serial,
+então dá para testar no seu notebook:
+
+```bash
+.venv/bin/python main.py --simular --painel
+```
+
+O painel abre em `http://127.0.0.1:8765` e mostra a arena em tempo real: o
+robô, o rastro, os oito sonares, a garra e os sensores de linha. Você **edita a
+pista** nele (paredes, objetos, cores, alvos, ponto de partida) e salva em TOML
+— o arquivo versionado no repositório é `pista.toml`.
+
+```bash
+.venv/bin/python main.py --simular --pista pista.toml --abrir --velocidade 4
+```
+
+`--velocidade 8` roda oito vezes mais rápido que o robô real; sem ele, o tempo é
+o de verdade — inclusive o elevador de 7 s por curso.
+
+Três receitas prontas, todas com painel:
+
+```bash
+.venv/bin/python -m rotas.percurso_fixo --painel   # quadrado de 800 mm
+.venv/bin/python -m rotas.desvio_sonar --velocidade 4
+.venv/bin/python -m rotas.pallet --velocidade 8
+```
+
+O simulador não é um robô de brincadeira: a fila de 100 comandos, os `ERROR=xx`,
+o elevador e as colisões seguem o guia. O que ele **não** tem é o erro do mundo
+real — inércia da bateria, folga dos motores, piso irregular. Ele prova a
+cinemática e a lógica da rotina, não a precisão da calibração.
 
 ## Calibração
 
@@ -91,7 +142,7 @@ todo controle. Copie o que aparecer para `[controle.botoes]` ou
 ## Desenvolvimento
 
 ```bash
-.venv/bin/python -m pytest -q     # 105 testes, nenhum precisa do robô
+.venv/bin/python -m pytest -q     # 312 testes, nenhum precisa do robô
 .venv/bin/ruff check .            # lint
 ```
 

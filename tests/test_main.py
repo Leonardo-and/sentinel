@@ -25,7 +25,7 @@ def bot_falso(monkeypatch, serial, tmp_path):
     return serial
 
 
-def test_anda_para_frente_e_para(bot_falso):
+def test_anda_a_rotina_de_passos_e_para(bot_falso):
     main.main()
     assert bot_falso.comandos == [
         "WP MT1 WD100",
@@ -33,9 +33,22 @@ def test_anda_para_frente_e_para(bot_falso):
         "WP DW262",
         "MT0 CR1",
         "MT0 E1",
+        "MT0 D700 AT1000 DT1000 V10",
+        "MT0 D90 R AT1000 DT1000 V10",
         "MT0 D500 AT1000 DT1000 V10",
+        "MT0 D45 L AT1000 DT1000 V10",
+        "MT0 D-400 AT1000 DT1000 V10",
+        "MT0 D600 AT1000 DT1000 V10",
         "MT0 E0",
     ]
+
+
+def test_passos_desconhecido_e_erro_de_programa(bot_falso, monkeypatch):
+    """Uma tabela editada errado tem de reclamar, não mandar lixo ao robô."""
+    monkeypatch.setattr(main, "PASSOS", (("pular", 3),))
+    with pytest.raises(ValueError, match="passo desconhecido"):
+        main.main()
+    assert bot_falso.comandos[-1] == "MT0 E0", "as rodas ficaram ligadas"
 
 
 def test_encerra_comando_mesmo_em_erro(bot_falso, monkeypatch):
@@ -53,6 +66,44 @@ def test_ganhos_sao_enviados_quando_configurados(bot_falso, monkeypatch):
     monkeypatch.setattr(main, "CFG", Config(so=1.35, ca=2.87))
     main.main()
     assert bot_falso.comandos[3:4] == ["PG SO1,35 CA2,87"]
+
+
+# --- a rotina na simulação ---------------------------------------------------
+@pytest.mark.parametrize("pista", ["pista.toml", None])
+def test_a_rotina_completa_sem_bater(pista):
+    """A sequência inteira tem de caber na arena — em ``pista.toml`` e no exemplo.
+
+    Se alguém aumentar um número em ``PASSOS``, este teste avisa antes de a
+    rotina sair batendo na parede no pátio.
+    """
+    from sentinel.simulacao import PlacaVirtual, RelogioFake, carregar, exemplo
+
+    arena = carregar(pista) if pista else exemplo()
+    with PlacaVirtual(arena, relogio=RelogioFake()) as placa:
+        with SoBot(serial_obj=placa, verbose=False) as bot:
+            main._movimentos(bot)
+        estado = placa.estado()
+        assert estado.colidiu is False, f"a rotina bateu em {pista}"
+        assert len(estado.trilha) >= len(main.PASSOS), "o rastro sumiu"
+        assert not estado.motores_ligados, "as rodas ficaram ligadas"
+
+
+def test_a_rotina_mesma_no_robô_e_na_simulação(bot_falso):
+    """O mesmo ``PASSOS`` gera a mesma sequência de comandos nos dois."""
+    comandos_reais = list(bot_falso.comandos)
+    bot_falso.comandos.clear()
+
+    from sentinel.simulacao import PlacaVirtual, RelogioFake, exemplo
+
+    with PlacaVirtual(exemplo(), relogio=RelogioFake()) as placa:
+        with SoBot(serial_obj=placa, verbose=False) as bot:
+            main._movimentos(bot)
+    comandos_sim = [c for c in placa.log if c.startswith(">> ")]
+
+    def movimentos(comandos):
+        return [c[3:] for c in comandos if c.startswith("MT0 D")]
+
+    assert movimentos(comandos_reais) == movimentos(comandos_sim)
 
 
 # --- roteamento da CLI --------------------------------------------------------

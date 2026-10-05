@@ -19,6 +19,11 @@ controle = ["inputs>=0.5"]
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# O painel é um HTML/CSS/JS servido pelo próprio simulador: ele viaja junto
+# com o pacote, senão o `pip install` numa Raspberry deixa o painel sem página.
+[tool.setuptools.package-data]
+sentinel = ["simulacao/painel.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

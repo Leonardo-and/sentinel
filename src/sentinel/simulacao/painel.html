@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentinel · simulador</title>
+<style>
+  :root {
+    --fundo: #10141a;
+    --painel: #171d26;
+    --borda: #2a3442;
+    --texto: #d7dee8;
+    --fraco: #7d8a9c;
+    --ok: #3ecf8e;
+    --alerta: #f0a848;
+    --erro: #ef5f5f;
+    --linha: #4a7fd0;
+    --sonar: #35c6c6;
+    --pallet: #e0483f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--fundo); color: var(--texto);
+    font: 13px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    display: flex; flex-direction: column; height: 100vh;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 10px 16px; background: var(--painel); border-bottom: 1px solid var(--borda);
+  }
+  header h1 { font-size: 14px; margin: 0; letter-spacing: .12em; text-transform: uppercase; }
+  header h1 span { color: var(--fraco); font-weight: normal; }
+  .conexao { display: flex; align-items: center; gap: 6px; color: var(--fraco); font-size: 12px; }
+  .conexao i { width: 8px; height: 8px; border-radius: 50%; background: var(--erro); display: inline-block; }
+  .conexao.on i { background: var(--ok); }
+  main { flex: 1; display: flex; min-height: 0; }
+  #tela { flex: 1; min-width: 0; position: relative; background: #0b0e13; }
+  canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+  aside {
+    width: 320px; flex: none; background: var(--painel); border-left: 1px solid var(--borda);
+    overflow-y: auto; padding: 12px 14px;
+  }
+  aside h2 {
+    font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--fraco);
+    margin: 18px 0 8px; border-bottom: 1px solid var(--borda); padding-bottom: 4px;
+  }
+  aside h2:first-child { margin-top: 0; }
+  .grade { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; }
+  .grade dt { color: var(--fraco); }
+  .grade dd { margin: 0; text-align: right; }
+  .grade dd.ok { color: var(--ok); } .grade dd.alerta { color: var(--alerta); }
+  .grade dd.erro { color: var(--erro); }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 1px 0; }
+  td:first-child { color: var(--fraco); width: 3em; }
+  td:last-child { text-align: right; }
+  .barra { display: inline-block; width: 60px; height: 6px; background: #0b0e13; border-radius: 3px; overflow: hidden; vertical-align: middle; }
+  .barra i { display: block; height: 100%; background: var(--sonar); }
+  pre#log {
+    margin: 0; padding: 8px; background: #0b0e13; border: 1px solid var(--borda);
+    border-radius: 4px; max-height: 220px; overflow: auto; font-size: 11px; white-space: pre-wrap;
+  }
+  .linha-botoes { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  button {
+    background: #232c39; color: var(--texto); border: 1px solid var(--borda);
+    border-radius: 4px; padding: 5px 9px; font: inherit; cursor: pointer;
+  }
+  button:hover { background: #2d3849; }
+  button.primario { background: #1f5aa8; border-color: #2d76cf; }
+  button.primario:hover { background: #2669c0; }
+  input[type="number"], input[type="text"], select {
+    background: #0b0e13; color: var(--texto); border: 1px solid var(--borda);
+    border-radius: 4px; padding: 4px 6px; font: inherit; width: 100%;
+  }
+  label { display: block; color: var(--fraco); margin-bottom: 3px; font-size: 11px; }
+  .campo { margin-bottom: 8px; }
+  .aviso { color: var(--alerta); font-size: 11px; min-height: 1.5em; }
+  .modo { color: var(--fraco); font-size: 11px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sentinel <span>· simulador</span></h1>
+  <div class="conexao" id="conexao"><i></i> <span id="conexao-texto">conectando…</span></div>
+  <div class="modo" id="modo"></div>
+</header>
+
+<main>
+  <div id="tela"><canvas id="cv"></canvas></div>
+  <aside>
+    <h2>Robô</h2>
+    <dl class="grade" id="robo"></dl>
+
+    <h2>Ferramentas</h2>
+    <div class="campo">
+      <label for="ferramenta">o que o clique faz</label>
+      <select id="ferramenta">
+        <option value="nada">nada (só olhar)</option>
+        <option value="mover">mover a montagem</option>
+        <option value="objeto">mover objeto</option>
+        <option value="paleta">mover paleta de cor</option>
+        <option value="parede">mover quina de parede</option>
+        <option value="apagar">apagar objeto</option>
+      </select>
+    </div>
+    <div class="linha-botoes">
+      <button id="salvar" class="primario">salvar pista</button>
+      <button id="recarregar">recarregar do disco</button>
+      <button id="exemplo">pista de exemplo</button>
+    </div>
+    <div class="aviso" id="aviso"></div>
+
+    <h2>Sonares</h2>
+    <table id="sonares"></table>
+
+    <h2>Linha / infra / digital</h2>
+    <table id="linha"></table>
+
+    <h2>Serial</h2>
+    <pre id="log"></pre>
+  </aside>
+</main>
+
+<script>
+"use strict";
+
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+let estado = null;
+let pista = null;         // cópia local editável
+let arquivo = null;       // nome do arquivo no servidor
+let conexao = null;
+let ferramenta = "nada";
+let selecionado = null;   // id do objeto arrastado
+let apertado = null;      // posição de mouse em mm da arena
+let arraste = null;       // dados do arraste de uma quina de parede
+let comprimento = 0;      // comprimento da parede em arraste
+
+// --- infraestrutura --------------------------------------------------------
+const escala = () => {
+  if (!pista) return 1;
+  return Math.min(cv.width / pista.largura, cv.height / pista.altura);
+};
+const paraTela = (x, y) => {
+  const e = escala();
+  return [cv.width / 2 - (pista.largura / 2 - x) * e, cv.height / 2 - (pista.altura / 2 - y) * e];
+};
+const paraArena = (px, py) => {
+  const e = escala();
+  return [pista.largura / 2 - (cv.width / 2 - px) / e, pista.altura / 2 - (cv.height / 2 - py) / e];
+};
+
+function redimensionar() {
+  const r = cv.parentElement.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(r.width * dpr);
+  cv.height = Math.round(r.height * dpr);
+  desenhar();
+}
+
+function avisar(texto, erro) {
+  const a = document.getElementById("aviso");
+  a.textContent = texto || "";
+  a.style.color = erro ? "var(--erro)" : "var(--ok)";
+}
+
+function conectar() {
+  conexao = new EventSource("/eventos");
+  conexao.onopen = () => {
+    document.getElementById("conexao").classList.add("on");
+    document.getElementById("conexao-texto").textContent = "ao vivo";
+  };
+  conexao.onerror = () => {
+    document.getElementById("conexao").classList.remove("on");
+    document.getElementById("conexao-texto").textContent = "sem conexão — tentando de novo";
+  };
+  conexao.onmessage = (ev) => {
+    estado = JSON.parse(ev.data);
+    if (!pista) { pista = estado.pista; arquivo = estado.arquivo; }
+    desenhar();
+    paineis();
+  };
+}
+
+// --- desenho ----------------------------------------------------------------
+function desenhar() {
+  if (!ctx || !pista || !estado) return;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = "#0b0e13";
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  const e = escala();
+
+  // a pista em si (o que o servidor mandou) e o que estou editando por cima
+  desenharPista(estado.pista, 0.55);
+  if (pista !== estado.pista) desenharPista(pista, 1);
+
+  const r = estado.robo;
+  const [cx, cy] = paraTela(r.x, r.y);
+
+  // rastro
+  if (r.trilha.length > 1) {
+    ctx.strokeStyle = "rgba(74,127,208,.45)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    r.trilha.forEach(([x, y], i) => {
+      const [px, py] = paraTela(x, y);
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    });
+    ctx.stroke();
+  }
+
+  // raios dos sonares
+  for (const s of estado.pista.sonares) {
+    const sxw = (s.xw !== undefined ? s.xw : s.x);
+    const syw = (s.yw !== undefined ? s.yw : s.y);
+    const angwRad = ((s.angw_graus !== undefined ? s.angw_graus : s.ang_graus) * Math.PI) / 180;
+    const [sx, sy] = paraTela(sxw, syw);
+    const dx = Math.cos(angwRad);
+    const dy = Math.sin(angwRad);
+    const alcMax = s.alcance_mm || 4000;
+    const alc = s.alcance;
+    const coneGraus = (s.cone_graus !== undefined ? s.cone_graus : 15.0);
+    const meiaCone = (coneGraus / 2) * Math.PI / 180;
+
+    // Cone do sonar
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    ctx.strokeStyle = "var(--sonar)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx + Math.cos(angwRad - meiaCone) * alcMax * e, sy + Math.sin(angwRad - meiaCone) * alcMax * e);
+    ctx.lineTo(sx + Math.cos(angwRad + meiaCone) * alcMax * e, sy + Math.sin(angwRad + meiaCone) * alcMax * e);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+
+    if (alc !== null) {
+      // Raio central até colisão
+      ctx.strokeStyle = "rgba(53,198,198,.9)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + dx * alc * e, sy + dy * alc * e);
+      ctx.stroke();
+      // Ponto de colisão
+      ctx.fillStyle = "var(--sonar)";
+      ctx.beginPath();
+      ctx.arc(sx + dx * alc * e, sy + dy * alc * e, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Sem alvo: linha tracejada até alcance máximo
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = "rgba(53,198,198,.4)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + dx * alcMax * e, sy + dy * alcMax * e);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // o pallet na garra
+  if (r.segure) {
+    const g = pista.objetos.find(o => o.id === r.segure);
+    if (g) desenharObjeto(g, "#f0a848", true);
+  }
+
+  // o robô: corpo, rumo e o que ele carrega
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate((r.ang_graus) * Math.PI / 180);
+  ctx.fillStyle = r.motores ? "#2d76cf" : "#3a4552";
+  ctx.strokeStyle = r.colidiu ? "var(--erro)" : "#7fb0f0";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const a = i * Math.PI / 4 + Math.PI / 8;
+    const x = Math.cos(a) * estado.pista.robo.raio_corpo * e;
+    const y = Math.sin(a) * estado.pista.robo.raio_corpo * e;
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  // rumo: a "frente" do robô é +y na tela
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, -estado.pista.robo.raio_corpo * e * 0.4);
+  ctx.lineTo(0, -estado.pista.robo.raio_corpo * e);
+  ctx.stroke();
+  ctx.restore();
+
+  // alcance da garra, quando ela está embaixo
+  if (!r.elevador) {
+    ctx.strokeStyle = "rgba(240,168,72,.35)";
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, estado.pista.robo.raio_pegagem * e, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // a preensão da arraste
+  if (apertado && selecionado === "__objeto__") {
+    const [x, y] = paraTela(apertado.x, apertado.y);
+    ctx.strokeStyle = "var(--alerta)";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.stroke();
+  }
+}
+
+function desenharPista(p, alpha) {
+  ctx.globalAlpha = alpha;
+  const e = escala();
+
+  // fundo do piso
+  ctx.fillStyle = "#14181f";
+  const [x0, y0] = paraTela(0, 0);
+  ctx.fillRect(x0, y0, p.largura * e, p.altura * e);
+  ctx.globalAlpha = alpha * 0.5;
+  ctx.strokeStyle = "#2a3442";
+  ctx.strokeRect(x0, y0, p.largura * e, p.altura * e);
+  ctx.globalAlpha = alpha;
+
+  // faixas de linha
+  ctx.strokeStyle = "var(--linha)";
+  ctx.lineWidth = 1;
+  for (const f of p.faixas) {
+    ctx.beginPath();
+    const [ax, ay] = paraTela(f.x1, f.y1);
+    const [bx, by] = paraTela(f.x2, f.y2);
+    ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+    ctx.lineWidth = Math.max(f.largura * e, 1);
+    ctx.stroke();
+    ctx.lineWidth = 1;
+  }
+
+  // alvos (só no editor)
+  for (const a of p.alvos || []) {
+    const [ax, ay] = paraTela(a.x, a.y);
+    ctx.strokeStyle = "var(--sonar)";
+    ctx.beginPath(); ctx.arc(ax, ay, 6, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // paredes
+  ctx.strokeStyle = "#8fa3bd";
+  ctx.lineWidth = 4;
+  for (const w of p.paredes) {
+    const [ax, ay] = paraTela(w.x1, w.y1);
+    const [bx, by] = paraTela(w.x2, w.y2);
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    for (const [qx, qy] of [[ax, ay], [bx, by]]) {
+      ctx.beginPath(); ctx.arc(qx, qy, 4, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  ctx.lineWidth = 1;
+
+  // objetos
+  for (const o of p.objetos) desenharObjeto(o, null, false, alpha);
+
+  // montagem
+  const [mx, my] = paraTela(p.montagem.x, p.montagem.y);
+  ctx.strokeStyle = "#e0483f";
+  ctx.beginPath(); ctx.arc(mx, my, 5, 0, Math.PI * 2); ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+const CORES = {
+  vermelho: "#e0483f", azul: "#3a6fd8", verde: "#3ecf8e",
+  amarelo: "#e8c33f", preto: "#2a2a2a", branco: "#f0f0f0", laranja: "#e8862f",
+};
+
+function desenharObjeto(o, forcado, naGarra, alpha = 1) {
+  const e = escala();
+  const [x0, y0] = paraTela(o.x - o.largura / 2, o.y + o.altura / 2);
+  ctx.globalAlpha = (naGarra ? 0.95 : 1) * alpha;
+  ctx.fillStyle = forcado || CORES[o.cor] || "#888";
+  ctx.fillRect(x0, y0, o.largura * e, o.altura * e);
+  if (o.id && o.id === selecionado) {
+    ctx.strokeStyle = "var(--alerta)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x0, y0, o.largura * e, o.altura * e);
+    ctx.lineWidth = 1;
+  }
+  ctx.globalAlpha = 1;
+}
+
+// --- os painéis da lateral --------------------------------------------------
+function dd(rotulo, valor, classe) {
+  return `<dt>${rotulo}</dt><dd class="${classe || ""}">${valor}</dd>`;
+}
+
+function paineis() {
+  const r = estado.robo;
+  document.getElementById("modo").textContent =
+    `${(estado.tempo).toFixed(1)} s · ${estado.velocidade}x` +
+    (r.modo_continuo ? " · contínuo " + r.direcao_continua : r.modo_pulso ? " · pulsos" : " · fixo");
+
+  document.getElementById("robo").innerHTML =
+    dd("posição", `${r.x.toFixed(0)}, ${r.y.toFixed(0)} mm`) +
+    dd("ângulo", `${r.ang_graus.toFixed(1)}°`) +
+    dd("velocidade", `${r.vel_mm_s.toFixed(0)} mm/s`) +
+    dd("motores", r.motores ? "ligados" : "desligados", r.motores ? "ok" : "") +
+    dd("fila", r.fila) +
+    dd("elevador", `${(r.elevador * 100).toFixed(0)}%`, r.elevador ? "alerta" : "") +
+    dd("ímãs", r.imenes ? "ligados" : "desligados", r.imenes ? "ok" : "") +
+    dd("na garra", r.segure || "—", r.segure ? "ok" : "") +
+    dd("colidiu", r.colidiu ? "sim" : "não", r.colidiu ? "erro" : "") +
+    (r.led ? dd("LED", `<span style="color:rgb(${r.led.join(",")})">■</span>`) : "") +
+    (r.buzzer ? dd("buzzer", "ligado", "alerta") : "");
+
+  const alc = estado.pista.sonares.reduce((m, s) => Math.max(m, s.alcance_mm || 0), 1500);
+  document.getElementById("sonares").innerHTML = estado.pista.sonares.map((s) => {
+    const v = s.alcance;
+    const pct = v == null ? 0 : Math.min(100, (v / alc) * 100);
+    const txt = v == null ? "sem alvo" : `${v.toFixed(0)} mm`;
+    return `<tr><td>S${s.id}</td><td><span class="barra"><i style="width:${pct}%"></i></span>` +
+           ` ${txt}</td></tr>`;
+  }).join("");
+
+  document.getElementById("linha").innerHTML =
+    `<tr><td>linha</td><td>${estado.sensores.linha.map(v => v ? "■" : "·").join(" ")}</td></tr>` +
+    dd("infra", `${estado.sensores.infra_cm.toFixed(0)} cm`) +
+    `<tr><td>digital</td><td>${estado.sensores.digital.join("")}</td></tr>`;
+
+  document.getElementById("log").textContent = estado.log.join("\n");
+  document.getElementById("log").scrollTop = 1e6;
+}
+
+// --- o editor ---------------------------------------------------------------
+function objetoEm(x, y) {
+  return (pista.objetos || []).find(o =>
+    Math.abs(x - o.x) <= o.largura / 2 && Math.abs(y - o.y) <= o.altura / 2);
+}
+
+function paredeEm(x, y, tol) {
+  // a parede cujo segmento passa mais perto do clique, dentro da tolerância
+  let melhor = null, dist = tol;
+  pista.paredes.forEach((w, i) => {
+    const d = distanciaAoSegmento(x, y, w.x1, w.y1, w.x2, w.y2);
+    if (d < dist) { dist = d; melhor = { parede: w, indice: i }; }
+  });
+  return melhor;
+}
+
+function distanciaAoSegmento(px, py, x1, y1, x2, y2) {
+  const ex = x2 - x1, ey = y2 - y1;
+  const den = ex * ex + ey * ey;
+  let t = den ? ((px - x1) * ex + (py - y1) * ey) / den : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + ex * t), py - (y1 + ey * t));
+}
+
+function mouseArena(ev) {
+  const r = cv.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  return paraArena((ev.clientX - r.left) * dpr, (ev.clientY - r.top) * dpr);
+}
+
+cv.addEventListener("mousedown", (ev) => {
+  if (!pista) return;
+  const [x, y] = mouseArena(ev);
+  apertado = { x, y };
+  if (ferramenta === "objeto") {
+    const o = objetoEm(x, y);
+    selecionado = o ? o.id : null;
+  } else if (ferramenta === "mover") {
+    selecionado = "__montagem__";
+  } else if (ferramenta === "parede") {
+    const alvo = paredeEm(x, y, 30);
+    if (!alvo) { selecionado = null; apertado = null; return; }
+    const w = alvo.parede;
+    selecionado = `__parede__${alvo.indice}__`;
+    // a quina arrastada é a mais próxima do clique, não a mais longe
+    const d1 = Math.hypot(x - w.x1, y - w.y1);
+    const d2 = Math.hypot(x - w.x2, y - w.y2);
+    arraste = { indice: alvo.indice, extremidade: d1 <= d2 ? "f1" : "f2" };
+    comprimento = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+    return;
+  } else if (ferramenta === "paleta") {
+    const o = objetoEm(x, y);
+    if (o) {
+      const cores = estado.paleta;
+      o.cor = cores[(cores.indexOf(o.cor) + 1) % cores.length];
+      desenhar();
+      avisar(`cor: ${o.cor}`);
+    }
+  } else if (ferramenta === "apagar") {
+    const o = objetoEm(x, y);
+    if (o) { pista.objetos = pista.objetos.filter(k => k.id !== o.id); desenhar(); }
+  }
+});
+
+window.addEventListener("mousemove", (ev) => {
+  if (!apertado || !selecionado || !pista) return;
+  const [x, y] = mouseArena(ev);
+  if (selecionado === "__montagem__") {
+    pista.montagem.x = x; pista.montagem.y = y;
+  } else if (selecionado.startsWith("__parede__")) {
+    // a parede é segmento: arrastar uma quina move a outra junto, senão ela
+    // estica ou encolhe sem querer
+    const w = pista.paredes[arraste.indice];
+    if (!w) { selecionado = null; return; }
+    if (arraste.extremidade === "f1") {
+      const dx = w.x2 - x, dy = w.y2 - y;
+      const n = Math.hypot(dx, dy) || 1;
+      w.x1 = w.x2 - (dx / n) * comprimento;
+      w.y1 = w.y2 - (dy / n) * comprimento;
+    } else {
+      const dx = x - w.x1, dy = y - w.y1;
+      const n = Math.hypot(dx, dy) || 1;
+      w.x2 = w.x1 + (dx / n) * comprimento;
+      w.y2 = w.y1 + (dy / n) * comprimento;
+    }
+  } else {
+    const o = pista.objetos.find(k => k.id === selecionado);
+    if (o) { o.x = x; o.y = y; }
+  }
+  apertado = { x, y };
+  desenhar();
+});
+
+window.addEventListener("mouseup", () => { apertado = null; arraste = null; });
+
+document.getElementById("ferramenta").addEventListener("change", (ev) => {
+  ferramenta = ev.target.value;
+});
+
+document.getElementById("salvar").addEventListener("click", async () => {
+  try {
+    const resp = await fetch("/pista", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ arena: pista, caminho: arquivo }),
+    });
+    const dados = await resp.json();
+    if (dados.ok) avisar(`salvo em ${dados.caminho}`);
+    else avisar(`não salvou: ${dados.erro}`, true);
+  } catch (e) { avisar(`não salvou: ${e}`, true); }
+});
+
+document.getElementById("recarregar").addEventListener("click", async () => {
+  const dados = await (await fetch("/recarregar", { method: "POST" })).json();
+  if (dados.ok) { pista = dados.pista; arquivo = dados.caminho; desenhar(); avisar("recarregado do disco"); }
+  else avisar(dados.erro, true);
+});
+
+document.getElementById("exemplo").addEventListener("click", async () => {
+  const dados = await (await fetch("/exemplo", { method: "POST" })).json();
+  if (dados.ok) { pista = dados.pista; desenhar(); avisar("pista de exemplo carregada"); }
+});
+
+window.addEventListener("resize", redimensionar);
+redimensionar();
+conectar();
+</script>
+</body>
+</html>
